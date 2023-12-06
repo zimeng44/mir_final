@@ -77,14 +77,45 @@ def find_close_f0(input_audio_array, output_audio_array):
     # for each frame in input_audio_array, 
     # find frames in output_audio_array with a close f0 (no larger than 10 cent diviation).
     # return the found audio frames in output_audio_array as an new array
-    pass
-
+    # for each frame in input_audio_array, 
+    # find frames in output_audio_array with a close f0 (no larger than 10 cent diviation).
+    # return the found audio frames in output_audio_array as an new array
+    # for frame_id, frame in input_audio_array.items():
+    thres = 0.1
+    hi = 2**(thres/12)
+    lo = 1 / hi
+    close_f0 ={}
+    for id1, frame1 in input_audio_array.items():
+      f1 = frame1['f0']
+      fc = []
+      if f1 > 0 :
+        for id2, frame2 in output_audio_array.items():
+          f2 = frame2['f0']
+          if f2 > 0:
+            if f2/f1 < hi and f2/f1 > lo: 
+              fc.append(id2)
+      close_f0[id1] = np.array(fc)
+    return close_f0
+    
 def get_mfcc_stats(audio_array):
     # calculate MFCCs of each frame in the array, 
     # and store mean and std of each frame in a new array  or dict
     # return a array of mfcc means and std
-    pass
-
+    feature_matrix = {}
+    for k,v in audio_array.items():
+      
+      n_fft = 2048
+      sr = 22050
+      hop_length = 512
+      n_mels = 128
+      n_mfcc = 20
+      mel_spectrogram = librosa.feature.melspectrogram(y=v['audio'], sr=sr, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels)
+      mfcc = librosa.feature.mfcc(S=librosa.power_to_db(mel_spectrogram), n_mfcc=n_mfcc)
+      mfcc = mfcc[1:n_mfcc]
+      features_mean = np.mean(mfcc, axis=-1)
+      feature_matrix[k] = features_mean
+    return feature_matrix
+    
 def find_close_mfcc(input_audio_array, output_audio_array):
     # for each frame in input_audio_array, 
     # we can find a few frames in output_audio_array that have close f0 (with 'find_close_f0()')
