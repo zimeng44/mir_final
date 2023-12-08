@@ -77,41 +77,69 @@ def find_close_f0(input_audio_array, output_audio_array):
     # for each frame in input_audio_array, 
     # find frames in output_audio_array with a close f0 (no larger than 10 cent diviation).
     # return the found audio frames in output_audio_array as an new array
-    # for each frame in input_audio_array, 
-    # find frames in output_audio_array with a close f0 (no larger than 10 cent diviation).
-    # return the found audio frames in output_audio_array as an new array
     # for frame_id, frame in input_audio_array.items():
+
+    # setting the threshold to 10 cent
     thres = 0.1
+
+    # comparing two notes
+    # set the two limits and exclude all frequencies
+    # that are beyond hi or below lo
     hi = 2**(thres/12)
     lo = 1 / hi
+
+    # create an empty dict
     close_f0 ={}
+
+    # id1 is key, for each frame containing three values
     for id1, frame1 in input_audio_array.items():
+      # f1 is the base frequency of frame1
       f1 = frame1['f0']
+
+      # f close as an empty list to be filled with
+      # the indexes in output array within the lo-hi range
       fc = []
+
+      # only taking frames whose base frequency
+      # exists
       if f1 > 0 :
+
+        # repeating the same procure within the output array
         for id2, frame2 in output_audio_array.items():
           f2 = frame2['f0']
           if f2 > 0:
+
+            # compare the two base frequencies
+            # store the indexes in fc
             if f2/f1 < hi and f2/f1 > lo: 
               fc.append(id2)
+
+      # store fc in the output dict
+      # finalize the output as a dict
+      # array as more convenient than list
       close_f0[id1] = np.array(fc)
+
     return close_f0
     
 def get_mfcc_stats(audio_array):
     # calculate MFCCs of each frame in the array, 
     # and store mean and std of each frame in a new array  or dict
     # return a array of mfcc means and std
+
     feature_matrix = {}
+    n_fft = 2048
+    sr = 22050
+    hop_length = 512
+    n_mels = 128
+    n_mfcc = 20
+    
     for k,v in audio_array.items():
-      
-      n_fft = 2048
-      sr = 22050
-      hop_length = 512
-      n_mels = 128
-      n_mfcc = 20
       mel_spectrogram = librosa.feature.melspectrogram(y=v['audio'], sr=sr, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels)
       mfcc = librosa.feature.mfcc(S=librosa.power_to_db(mel_spectrogram), n_mfcc=n_mfcc)
       mfcc = mfcc[1:n_mfcc]
+
+      # get the mean of each column and 
+      # store in the matrix 
       features_mean = np.mean(mfcc, axis=-1)
       feature_matrix[k] = features_mean
     return feature_matrix
