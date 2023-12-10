@@ -1,157 +1,260 @@
-import mirdata
+
 import librosa
 import crepe
 import numpy as np
-import mir_eval
+
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 from IPython.display import display, Audio
 
-def tempo_match(ref_audio, input_audio):
+import math
+
+def tempo_match(ref_audio, match_audio):
     
     # Load the audio file
-    ref_arr, sr = librosa.load(ref_audio.audio_path)
-    in_arr, sr = librosa.load(in_audio.audio_path)
+    ref_arr, sr_ref = ref_audio
+    match_arr, sr_match = match_audio
 
     # Tempo detector
-    ref_tempo, beat_frames = librosa.beat.beat_track(y=ref_arr, sr=(sr*5))
-    in_tempo, beat_frames = librosa.beat.beat_track(y=in_arr, sr=(sr*5))
+    ref_tempo, beat_frames = librosa.beat.beat_track(y=ref_arr, sr=sr_ref)
+    match_tempo, beat_frames = librosa.beat.beat_track(y=match_arr, sr=sr_match)
+
+    # print(ref_tempo, match_tempo)
 
     # Round up file's tempo to nearest 10 
     # round_tempo = int((round(tempo/10) * 10)) 
 
     # Calculate the time stretch factor needed to achieve the desired tempo
-    stretch_factor = ref_tempo / in_tempo
+    stretch_factor =  match_tempo/ref_tempo
     
     # Stretch the audio using the calculated stretch factor
-    arr_stretched = librosa.effects.time_stretch(y = in_tempo, rate = stretch_factor)
+    arr_stretched = [librosa.effects.time_stretch(y = match_arr, rate = stretch_factor), sr_match]
+
+    return arr_stretched
     
-    stretched_audio = Audio(arr_stretched, rate = sr)
+    # stretched_audio = Audio(arr_stretched, rate = sr)
+
 
 def f0_slicer(audio):
     # cut audio into an array of audio frames by notes (f0), each frame has only one note(f0)
     # return an array of audio frames with estimated f0
 
-    arr, sr = librosa.load(audio.audio_path)
+    # arr, sr = librosa.load(audio.audio_path)
+    arr = audio[0]
+    sr = audio[1]
     
-    time, frequency, confidence, activation = crepe.predict(arr, sr, viterbi=False)
+    time, frequency, confidence, activation = crepe.predict(arr, sr, viterbi=True)
+
+    # print("confidence length", len(confidence))
+    # print("frequency length", len(frequency))
+    # print("time shape", time.shape)
+    # print("activation shape", activation.shape)
 
     frequency[confidence<0.3] = 0
 
     # plot_pitch(time, frequency, confidence, activation)
     # Create an array to store the sliced audio frames
-    return_dict = {}
+    slices = {}
 
+    # # Iterate through note indices and slice audio accordingly
+   
+    cents = 20
+    hi = 2**(cents/1200)
+    lo = 1 / hi
+
+    slice_id = 0
     i = 0
 
-    # Iterate through note indices and slice audio accordingly
-    for note in np.where(confidence > 0.8)[0]:
+    while i < (len(frequency) - 1):
+      note_times = [librosa.time_to_samples(time[i], sr = sr), 0]
+      # note_times = [time[i], 0] 
 
-      start = time[note]
+      for j in np.arange(i + 1, len(time)): # j starts from the next element to i
+          
+          if j >= len(frequency)-1: #if the loop has reach the end of thefrequency  array, quit looping
+            note_times[1] = librosa.time_to_samples(time[j], sr = sr)
+            i = j
+            # print("1", i, j)
+            break
+          
+          if frequency[i] == 0:           # if frequency[i] is equal to 0
+             
+             if frequency[j] == 0:        # if frequency[i] and frequency[j] are both equal to 0, keep looping
 
-      if np.any(len(time) > note + 1):
-        end = time[note+1]
-        # print(end_time)
-      else:
-        end = start + 1
+               #  print("2", i, j)
+                continue
+             else:                        #if frequency[i] is 0 but frequency[j] is not 0, we found the end of the note_time
+                if j-1 == i:
+                   continue
+                note_times[1] = librosa.time_to_samples(time[j-1], sr = sr)
+                i = j                     # in next iteration, i stats at the j position
+               #  print("3", i, j)
+                break
+             
+          else: # if frequency[i] is not equal to 0
+             
+             if frequency[j] == 0:        #if frequency[i] is not 0 but frequency[j] is  0, we found the end of the note_time
+                if j-1 == i:
+                   continue
+                note_times[1] = librosa.time_to_samples(time[j-1], sr = sr)
+                i = j                     # in next iteration, i stats at the j position
+               #  print("4", i, j)
+                break
+             
+             if frequency[j]  / frequency[i] < hi and frequency[i+1]  / frequency[i] > lo:  #if frequency[i] is not 0 and frquency[j] is a close f0
 
-      # Convert time to sample indices
-      start_sample = librosa.time_to_samples(start)
-      # print(int(start_sample))
-      end_sample = librosa.time_to_samples(end)
-      # print(int(end_sample))
+               #  print("5", i, j)
+                i = j
+                continue                 # we need to find where the note ends
+             else:                       #if frequency[i] is not 0 and frquency[j] is not a close f0, we found the end of the note
+                if j-1 == i:
+                   continue
+                note_times[1] = librosa.time_to_samples(time[j-1], sr = sr) 
+                i = j                    # in next iteration, i stats at the j position
+               #  print("6", i, j)
+                break
+             
+      # print("7", i)
+      # print(i, note_times)
+      audio = np.array([arr[note_times[0]:note_times[1]], sr], dtype=object)
+      # print(np.array(audio))
+      slices[slice_id] = {'f0': frequency[i], 'time_code': np.array(note_times), 'audio': audio}
+      slice_id += 1
 
-      # print(arr[start_sample:end_sample])
-
-      # Slice audio and append to the array
-      sliced_frames_arr = arr[start_sample:end_sample]
-      time_code_arr = np.array([start_sample, end_sample])
-
-      return_dict[i] = {'f0': frequency[note], 'time code': time_code_arr, 'audio': sliced_frames_arr}
-
-      i+=1
+   #  for i in slices:
+   #     if len(slices[i]['audio'][0]) == 0:
+   #        print(i)
     
-    return sr, return_dict
+    return slices
 
-def find_close_f0(input_audio_array, output_audio_array):
+def find_close_f0(ref_slices, match_slices):
+    # for each frame in input_audio_array, 
+    # find frames in output_audio_array with a close f0 (no larger than 10 cent diviation).
+    # return the found audio frames in output_audio_array as an new array
     # for each frame in input_audio_array, 
     # find frames in output_audio_array with a close f0 (no larger than 10 cent diviation).
     # return the found audio frames in output_audio_array as an new array
     # for frame_id, frame in input_audio_array.items():
-
-    # setting the threshold to 10 cent
-    thres = 0.1
-
-    # comparing two notes
-    # set the two limits and exclude all frequencies
-    # that are beyond hi or below lo
-    hi = 2**(thres/12)
+    cents = 30
+    hi = 2**(cents/1200)
     lo = 1 / hi
+    close_f0 = {}
 
-    # create an empty dict
-    close_f0 ={}
+    for id_ref, frame_ref in ref_slices.items():
 
-    # id1 is key, for each frame containing three values
-    for id1, frame1 in input_audio_array.items():
-      # f1 is the base frequency of frame1
-      f1 = frame1['f0']
+      f0_ref = frame_ref['f0']
+      matched_ids = []
 
-      # f close as an empty list to be filled with
-      # the indexes in output array within the lo-hi range
-      fc = []
+      if f0_ref > 0 :
+        for id_match, frame_match in match_slices.items():
+          
+          f0_match = frame_match['f0']
 
-      # only taking frames whose base frequency
-      # exists
-      if f1 > 0 :
+          if f0_match > 0:
+            for octave in [1/16, 1/8, 1/4, 1/2, 1, 2, 4, 8, 16]:
+              if (f0_match*octave) / f0_ref < hi and (f0_match*octave) / f0_ref > lo: 
+                  matched_ids.append([id_match, octave])
+                  break
+        if len(matched_ids) == 0:
+           matched_ids = np.array([[-1, 0]])
 
-        # repeating the same procure within the output array
-        for id2, frame2 in output_audio_array.items():
-          f2 = frame2['f0']
-          if f2 > 0:
-
-            # compare the two base frequencies
-            # store the indexes in fc
-            if f2/f1 < hi and f2/f1 > lo: 
-              fc.append(id2)
-
-      # store fc in the output dict
-      # finalize the output as a dict
-      # array as more convenient than list
-      close_f0[id1] = np.array(fc)
+        close_f0[id_ref] = np.array(matched_ids)
+      #   print(close_f0[id_ref])
+      else:
+         
+         close_f0[id_ref] = np.array([[-1, 0]])
+         # print(close_f0[id_ref])
 
     return close_f0
     
-def get_mfcc_stats(audio_array):
+def get_mfcc_stats(slices):
     # calculate MFCCs of each frame in the array, 
     # and store mean and std of each frame in a new array  or dict
     # return a array of mfcc means and std
-
     feature_matrix = {}
-    n_fft = 2048
-    sr = 22050
-    hop_length = 512
-    n_mels = 128
-    n_mfcc = 20
-    
-    for k,v in audio_array.items():
-      mel_spectrogram = librosa.feature.melspectrogram(y=v['audio'], sr=sr, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels)
+    for k,v in slices.items():
+      
+      n_fft = 128
+      sr = v['audio'][1]
+      hop_length = 512
+      n_mels = 16
+      n_mfcc = 20
+
+      mel_spectrogram = librosa.feature.melspectrogram(y = v['audio'][0], sr = sr, n_fft = n_fft, hop_length = hop_length, n_mels = n_mels)
       mfcc = librosa.feature.mfcc(S=librosa.power_to_db(mel_spectrogram), n_mfcc=n_mfcc)
       mfcc = mfcc[1:n_mfcc]
-
-      # get the mean of each column and 
-      # store in the matrix 
       features_mean = np.mean(mfcc, axis=-1)
       feature_matrix[k] = features_mean
+
     return feature_matrix
     
-def find_close_mfcc(input_audio_array, output_audio_array):
+def find_close_mfcc(close_f0, ref_mfcc, match_mfcc):
     # for each frame in input_audio_array, 
     # we can find a few frames in output_audio_array that have close f0 (with 'find_close_f0()')
     # In these close f0 frames, find the one with the closet mfcc to the frame in input_audio_array
     #return an array of the frames with the closest MFCCs
-    pass
+    # pass
 
-def resynth(input_audio_array, input_mfcc_array, output_audio_array, output_mfcc_array):
+    close_mfcc = {}
+
+    for id, all_matched_f0 in close_f0.items():
+
+      if all_matched_f0[0][0] != -1: # if there are matched frames for the ref_id in ref_slices
+         
+         cloest_distance = np.sum(match_mfcc[all_matched_f0[0][0]]) - np.sum(ref_mfcc[id])
+         close_mfcc[id] = all_matched_f0[0]
+
+         for f0_matched_id in all_matched_f0: # find the closest mfcc match for the ref_id
+            
+            # print(match_mfcc[f0_matched_id[0]])
+            distance = np.sum(match_mfcc[f0_matched_id[0]]) - np.sum(ref_mfcc[id])
+            
+            if distance < cloest_distance:
+               cloest_distance = distance
+               close_mfcc[id] = np.array(f0_matched_id)
+      else:
+         
+         close_mfcc[id] = np.array([-1, 0])
+
+    return close_mfcc
+
+def resynth(ref_slices, match_slices, close_mfcc):
     #put the frames in output_audio_array in the mapped order with adjusted length. 
     #return the resynthesized audio
-    pass
+    # pass
+    output_audio = np.array([])
+    
+
+    for frame_id, ref_slice in ref_slices.items():
+
+      if close_mfcc[frame_id][0] == -1:
+
+         # silent_slice = ref_slice[ref_slice['time_code'][0]:ref_slice['time_code'][1]]
+         output_audio = np.concatenate((output_audio, ref_slice['audio'][0]))
+        #  print("found zeros", silent_slice)
+
+      else:
+
+         ref_frame_len = len(ref_slice['audio'])
+         match_frame_len = len(match_slices[close_mfcc[frame_id][0]]['audio'])
+         time_stretch_rate = 1
+
+         if match_frame_len > 0 and ref_frame_len>0:
+            time_stretch_rate = ref_frame_len/match_frame_len
+
+         matched_audio  = match_slices[close_mfcc[frame_id][0]]['audio'][0]
+         
+         matched_audio = librosa.effects.time_stretch(y = matched_audio, rate = 1/time_stretch_rate)
+
+         sr = match_slices[close_mfcc[frame_id][0]]['audio'][1]
+
+         octave = close_mfcc[frame_id][1]
+
+         if octave > 1:
+            librosa.effects.pitch_shift(y = matched_audio, sr = sr, n_steps = (octave-1) * 12, )
+         elif 0 < octave < 1:
+            librosa.effects.pitch_shift(y = matched_audio, sr = sr, n_steps = math.log2(octave) * 12 )
+            
+         output_audio = np.concatenate((output_audio, matched_audio))
+
+    return output_audio
