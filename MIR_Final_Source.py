@@ -11,25 +11,25 @@ import math
 
 def tempo_match(ref_audio, match_audio):
     
-    # Load the audio file
+    # Load the reference and matching audio files
     ref_arr, sr_ref = ref_audio
     match_arr, sr_match = match_audio
 
-    # Tempo detector
+    # Tempo detector for both fiels 
     ref_tempo, beat_frames = librosa.beat.beat_track(y=ref_arr, sr=sr_ref)
     match_tempo, beat_frames = librosa.beat.beat_track(y=match_arr, sr=sr_match)
 
     # print(ref_tempo, match_tempo)
-
     # Round up file's tempo to nearest 10 
     # round_tempo = int((round(tempo/10) * 10)) 
 
-    # Calculate the time stretch factor needed to achieve the desired tempo
+    # Calculate the time stretch factor
     stretch_factor =  match_tempo/ref_tempo
     
     # Stretch the audio using the calculated stretch factor
     arr_stretched = [librosa.effects.time_stretch(y = match_arr, rate = stretch_factor), sr_match]
 
+    # return the audio array
     return arr_stretched
     
     # stretched_audio = Audio(arr_stretched, rate = sr)
@@ -40,9 +40,12 @@ def f0_slicer(audio):
     # return an array of audio frames with estimated f0
 
     # arr, sr = librosa.load(audio.audio_path)
+    
+    # assign the audio array and its sample rate to their own variables
     arr = audio[0]
     sr = audio[1]
-    
+
+    # using crepe to detect pitch estimation with its time, confidence of prediction and activation
     time, frequency, confidence, activation = crepe.predict(arr, sr, viterbi=True)
 
     # print("confidence length", len(confidence))
@@ -50,21 +53,22 @@ def f0_slicer(audio):
     # print("time shape", time.shape)
     # print("activation shape", activation.shape)
 
+    # normalize the frequency information based on a threshold
     frequency[confidence<0.3] = 0
 
-    # plot_pitch(time, frequency, confidence, activation)
     # Create an array to store the sliced audio frames
     slices = {}
 
-    # # Iterate through note indices and slice audio accordingly
-   
+    # set up the range of acceptable pitch by cent 
     cents = 20
     hi = 2**(cents/1200)
     lo = 1 / hi
 
+    # set up iteration variables
     slice_id = 0
     i = 0
 
+    # start iterate over audio array to slice it based on the length of each note
     while i < (len(frequency) - 1):
       note_times = [librosa.time_to_samples(time[i], sr = sr), 0]
       # note_times = [time[i], 0] 
@@ -116,9 +120,15 @@ def f0_slicer(audio):
              
       # print("7", i)
       # print(i, note_times)
+        
+      # create audio array based on time variables
       audio = np.array([arr[note_times[0]:note_times[1]], sr], dtype=object)
       # print(np.array(audio))
+        
+      # store each slice to a dict with f0, time_code and audio as keyws with its corresponding values
       slices[slice_id] = {'f0': frequency[i], 'time_code': np.array(note_times), 'audio': audio}
+
+      # move the iteration of each slice's id by 1 after each processing cycle
       slice_id += 1
 
    #  for i in slices:
