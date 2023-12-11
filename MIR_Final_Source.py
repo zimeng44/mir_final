@@ -2,11 +2,7 @@
 import librosa
 import crepe
 import numpy as np
-
-import matplotlib.cm as cm
 import matplotlib.pyplot as plt
-from IPython.display import display, Audio
-
 import math
 
 def tempo_match(ref_audio, match_audio):
