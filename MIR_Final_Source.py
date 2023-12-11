@@ -161,7 +161,7 @@ def find_close_f0(ref_slices, match_slices):
           f0_match = frame_match['f0']
 
           if f0_match > 0:
-            for octave in [1/16, 1/8, 1/4, 1/2, 1, 2, 4, 8, 16]:
+            for octave in [1/8, 1/4, 1/2, 1, 2, 4, 8]:
               if (f0_match*octave) / f0_ref < hi and (f0_match*octave) / f0_ref > lo: 
                   matched_ids.append([id_match, octave])
                   # print(f0_ref,f0_match)
