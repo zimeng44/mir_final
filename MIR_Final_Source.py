@@ -258,8 +258,6 @@ def resynth(ref_slices, match_slices, close_mfcc):
             matched_audio = librosa.effects.pitch_shift(y = matched_audio, sr = sr, n_steps = (octave-1) * 12, )
          elif 0 < octave < 1:
             matched_audio = librosa.effects.pitch_shift(y = matched_audio, sr = sr, n_steps = math.log2(octave) * 12 )
-         else:
-            print("don't need pitch shift")
             
          output_audio = np.concatenate((output_audio, matched_audio))
 
