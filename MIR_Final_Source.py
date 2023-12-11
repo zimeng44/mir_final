@@ -130,9 +130,10 @@ def f0_slicer(audio):
       slices[slice_id] = {'f0': f0_mean, 'time_code': np.array(note_times), 'audio': audio}
       slice_id += 1
 
-   #  for i in slices:
-   #     if len(slices[i]['audio'][0]) == 0:
-   #        print(i)
+    for slice_id in np.arange(len(slices)):
+       if len(slices[slice_id]['audio'][0]) < (sr/40):
+          slices[slice_id]['audio'][0] = np.zeros(len(slices[slice_id]['audio'][0]))
+          slices[slice_id]['f0'] = 0
     
     return slices
 
