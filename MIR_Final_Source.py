@@ -42,6 +42,11 @@ def f0_slicer(audio):
     # arr, sr = librosa.load(audio.audio_path)
     arr = audio[0]
     sr = audio[1]
+
+    thresh_ref = np.max(np.abs(arr))/200
+    for i in np.arange(len(arr)):
+       if np.abs(arr[i]) < thresh_ref:
+          arr[i] = 0
     
     time, frequency, confidence, activation = crepe.predict(arr, sr, viterbi=True)
 
@@ -242,8 +247,8 @@ def resynth(ref_slices, match_slices, close_mfcc):
 
       else:
 
-         ref_frame_len = len(ref_slice['audio'])
-         match_frame_len = len(match_slices[close_mfcc[frame_id][0]]['audio'])
+         ref_frame_len = len(ref_slice['audio'][0])
+         match_frame_len = len(match_slices[close_mfcc[frame_id][0]]['audio'][0])
          time_stretch_rate = 1
 
          if match_frame_len > 0 and ref_frame_len>0:
