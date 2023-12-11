@@ -11,25 +11,25 @@ import math
 
 def tempo_match(ref_audio, match_audio):
     
-    # Load the reference and matching audio files
+    # Load the audio file
     ref_arr, sr_ref = ref_audio
     match_arr, sr_match = match_audio
 
-    # Tempo detector for both fiels 
+    # Tempo detector
     ref_tempo, beat_frames = librosa.beat.beat_track(y=ref_arr, sr=sr_ref)
     match_tempo, beat_frames = librosa.beat.beat_track(y=match_arr, sr=sr_match)
 
     # print(ref_tempo, match_tempo)
+
     # Round up file's tempo to nearest 10 
     # round_tempo = int((round(tempo/10) * 10)) 
 
-    # Calculate the time stretch factor
+    # Calculate the time stretch factor needed to achieve the desired tempo
     stretch_factor =  match_tempo/ref_tempo
     
     # Stretch the audio using the calculated stretch factor
     arr_stretched = [librosa.effects.time_stretch(y = match_arr, rate = stretch_factor), sr_match]
 
-    # return the audio array
     return arr_stretched
     
     # stretched_audio = Audio(arr_stretched, rate = sr)
@@ -40,43 +40,35 @@ def f0_slicer(audio):
     # return an array of audio frames with estimated f0
 
     # arr, sr = librosa.load(audio.audio_path)
-    
-    # assign the audio array and its sample rate to their own variables
     arr = audio[0]
     sr = audio[1]
-
-    # using crepe to detect pitch estimation with its time, confidence of prediction and activation
+    
     time, frequency, confidence, activation = crepe.predict(arr, sr, viterbi=True)
 
-    # print("confidence length", len(confidence))
-    # print("frequency length", len(frequency))
-    # print("time shape", time.shape)
-    # print("activation shape", activation.shape)
-
-    # normalize the frequency information based on a threshold
     frequency[confidence<0.3] = 0
 
     # Create an array to store the sliced audio frames
     slices = {}
 
-    # set up the range of acceptable pitch by cent 
+    # # Iterate through note indices and slice audio accordingly
+   
     cents = 20
     hi = 2**(cents/1200)
     lo = 1 / hi
 
-    # set up iteration variables
     slice_id = 0
     i = 0
 
-    # start iterate over audio array to slice it based on the length of each note
     while i < (len(frequency) - 1):
       note_times = [librosa.time_to_samples(time[i], sr = sr), 0]
-      # note_times = [time[i], 0] 
+      mean_freq = [frequency[i], ]
 
       for j in np.arange(i + 1, len(time)): # j starts from the next element to i
           
           if j >= len(frequency)-1: #if the loop has reach the end of thefrequency  array, quit looping
             note_times[1] = librosa.time_to_samples(time[j], sr = sr)
+            mean_freq.append(frequency[j])
+
             i = j
             # print("1", i, j)
             break
@@ -91,6 +83,8 @@ def f0_slicer(audio):
                 if j-1 == i:
                    continue
                 note_times[1] = librosa.time_to_samples(time[j-1], sr = sr)
+                mean_freq.append(frequency[j])
+
                 i = j                     # in next iteration, i stats at the j position
                #  print("3", i, j)
                 break
@@ -101,6 +95,8 @@ def f0_slicer(audio):
                 if j-1 == i:
                    continue
                 note_times[1] = librosa.time_to_samples(time[j-1], sr = sr)
+                mean_freq.append(frequency[j])
+
                 i = j                     # in next iteration, i stats at the j position
                #  print("4", i, j)
                 break
@@ -109,26 +105,24 @@ def f0_slicer(audio):
 
                #  print("5", i, j)
                 i = j
+                mean_freq.append(frequency[j])
                 continue                 # we need to find where the note ends
              else:                       #if frequency[i] is not 0 and frquency[j] is not a close f0, we found the end of the note
                 if j-1 == i:
                    continue
                 note_times[1] = librosa.time_to_samples(time[j-1], sr = sr) 
+                mean_freq.append(frequency[j])
+               
                 i = j                    # in next iteration, i stats at the j position
                #  print("6", i, j)
                 break
              
       # print("7", i)
       # print(i, note_times)
-        
-      # create audio array based on time variables
       audio = np.array([arr[note_times[0]:note_times[1]], sr], dtype=object)
+      f0_mean = np.mean(mean_freq)
       # print(np.array(audio))
-        
-      # store each slice to a dict with f0, time_code and audio as keyws with its corresponding values
-      slices[slice_id] = {'f0': frequency[i], 'time_code': np.array(note_times), 'audio': audio}
-
-      # move the iteration of each slice's id by 1 after each processing cycle
+      slices[slice_id] = {'f0': f0_mean, 'time_code': np.array(note_times), 'audio': audio}
       slice_id += 1
 
    #  for i in slices:
@@ -145,7 +139,7 @@ def find_close_f0(ref_slices, match_slices):
     # find frames in output_audio_array with a close f0 (no larger than 10 cent diviation).
     # return the found audio frames in output_audio_array as an new array
     # for frame_id, frame in input_audio_array.items():
-    cents = 30
+    cents = 10
     hi = 2**(cents/1200)
     lo = 1 / hi
     close_f0 = {}
@@ -164,12 +158,13 @@ def find_close_f0(ref_slices, match_slices):
             for octave in [1/16, 1/8, 1/4, 1/2, 1, 2, 4, 8, 16]:
               if (f0_match*octave) / f0_ref < hi and (f0_match*octave) / f0_ref > lo: 
                   matched_ids.append([id_match, octave])
+                  # print(f0_ref,f0_match)
                   break
         if len(matched_ids) == 0:
            matched_ids = np.array([[-1, 0]])
 
         close_f0[id_ref] = np.array(matched_ids)
-      #   print(close_f0[id_ref])
+        
       else:
          
          close_f0[id_ref] = np.array([[-1, 0]])
@@ -234,7 +229,6 @@ def resynth(ref_slices, match_slices, close_mfcc):
     # pass
     output_audio = np.array([])
     
-
     for frame_id, ref_slice in ref_slices.items():
 
       if close_mfcc[frame_id][0] == -1:
@@ -261,9 +255,11 @@ def resynth(ref_slices, match_slices, close_mfcc):
          octave = close_mfcc[frame_id][1]
 
          if octave > 1:
-            librosa.effects.pitch_shift(y = matched_audio, sr = sr, n_steps = (octave-1) * 12, )
+            matched_audio = librosa.effects.pitch_shift(y = matched_audio, sr = sr, n_steps = (octave-1) * 12, )
          elif 0 < octave < 1:
-            librosa.effects.pitch_shift(y = matched_audio, sr = sr, n_steps = math.log2(octave) * 12 )
+            matched_audio = librosa.effects.pitch_shift(y = matched_audio, sr = sr, n_steps = math.log2(octave) * 12 )
+         else:
+            print("don't need pitch shift")
             
          output_audio = np.concatenate((output_audio, matched_audio))
 
