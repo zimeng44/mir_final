@@ -188,6 +188,9 @@ def get_mfcc_stats(slices):
       mel_spectrogram = librosa.feature.melspectrogram(y = v['audio'][0], sr = sr, n_fft = n_fft, hop_length = hop_length, n_mels = n_mels)
       mfcc = librosa.feature.mfcc(S=librosa.power_to_db(mel_spectrogram), n_mfcc=n_mfcc)
       mfcc = mfcc[1:n_mfcc]
+
+      # get the mean of each column and 
+      # store in the matrix 
       features_mean = np.mean(mfcc, axis=-1)
       feature_matrix[k] = features_mean
 
