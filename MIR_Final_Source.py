@@ -177,10 +177,17 @@ def find_close_f0(ref_slices, match_slices):
 def get_mfcc_stats(slices):
     # calculate MFCCs of each frame in the array, 
     # and store mean and std of each frame in a new array  or dict
-    # return a array of mfcc means and std
+    # input - slices: A dictionary where keys represent slice identifiers and values are dictionaries
+    # containing audio information (e.g., {'slice_id': {'audio': (signal, sampling_rate)}})
+    # returns - feature_matrix: A dictionary where keys are slice identifiers and values are arrays
+    # representing the mean MFCCs for each slice.
+
+    # Initialize the dictionary to store mean MFCCs for each slice
     feature_matrix = {}
+
+    # Iterate through each audio slice
     for k,v in slices.items():
-      
+      # Parameters for MFCC calculation
       n_fft = 128
       sr = v['audio'][1]
       hop_length = 512
@@ -202,68 +209,93 @@ def find_close_mfcc(close_f0, ref_mfcc, match_mfcc):
     # for each frame in input_audio_array, 
     # we can find a few frames in output_audio_array that have close f0 (with 'find_close_f0()')
     # In these close f0 frames, find the one with the closet mfcc to the frame in input_audio_array
-    #return an array of the frames with the closest MFCCs
-    # pass
-
+    # inputs - close_f0: Dictionary with identifiers as keys and lists of matched frames as values.
+    # ref_mfcc: Dictionary with identifiers as keys and MFCC representations of reference frames as values.
+    # match_mfcc: Dictionary with frame indices as keys and MFCC representations as values.
+    # returns - close_mfcc: Dictionary with identifiers as keys and indices of frames with closest MFCCs as values.
+    
+    # create empty dictionary to store closest MFCC matches
     close_mfcc = {}
 
+    # Iterate through identifiers and matched frames
     for id, all_matched_f0 in close_f0.items():
-
+        
+      # Check if there are matched frames for the reference identifier
       if all_matched_f0[0][0] != -1: # if there are matched frames for the ref_id in ref_slices
-         
+
+         # Initialize variables to track closest distance and matching frame
          cloest_distance = np.sum(match_mfcc[all_matched_f0[0][0]]) - np.sum(ref_mfcc[id])
          close_mfcc[id] = all_matched_f0[0]
 
+        # Iterate through matched frames to find the closest MFCC match
          for f0_matched_id in all_matched_f0: # find the closest mfcc match for the ref_id
             
-            # print(match_mfcc[f0_matched_id[0]])
+            # Calculate distance between MFCC representations
             distance = np.sum(match_mfcc[f0_matched_id[0]]) - np.sum(ref_mfcc[id])
-            
+
+            # Update closest match if current distance is smaller
             if distance < cloest_distance:
                cloest_distance = distance
                close_mfcc[id] = np.array(f0_matched_id)
       else:
-         
+          
+         # If no matched frames, set value to -1 which indicates no match
          close_mfcc[id] = np.array([-1, 0])
 
+    # Return dictionary with closest MFCC matches for each identifier
     return close_mfcc
 
 def resynth(ref_slices, match_slices, close_mfcc):
-    #put the frames in output_audio_array in the mapped order with adjusted length. 
-    #return the resynthesized audio
-    # pass
+    # put the frames in output_audio_array in the mapped order with adjusted length. 
+    # inputs - ref_slices (dict): A dictionary containing reference audio slices. Each entry represents a frame.
+    # match_slices (dict): A dictionary containing matched audio slices. Each entry represents a frame.
+    # close_mfcc (list): A list containing information about the closest matching frame for each reference frame.
+    # Each element is a tuple (index, octave), where 'index' is the index of the closest matching
+    # frame in 'match_slices', and 'octave' is a value representing the pitch difference.
+    # returns - output_audio (np.ndarray): The resynthesized audio as a NumPy array.
+
+    # create an empty array to store the output audio
     output_audio = np.array([])
     
     for frame_id, ref_slice in ref_slices.items():
-
+        
+       # Check if the first element of close_mfcc[frame_id] is -1
       if close_mfcc[frame_id][0] == -1:
 
-         # silent_slice = ref_slice[ref_slice['time_code'][0]:ref_slice['time_code'][1]]
+         # If it is -1, it means the frame should be silent, so concatenate the silent frame
          output_audio = np.concatenate((output_audio, ref_slice['audio'][0]))
-        #  print("found zeros", silent_slice)
+        
 
       else:
-
+        # Calculate the length of the reference and matched frames
          ref_frame_len = len(ref_slice['audio'][0])
          match_frame_len = len(match_slices[close_mfcc[frame_id][0]]['audio'][0])
+
+        # Initialize time_stretch_rate to 1
          time_stretch_rate = 1
 
+        # If both frame lengths are greater than 0, calculate the time stretch rate
          if match_frame_len > 0 and ref_frame_len>0:
             time_stretch_rate = ref_frame_len/match_frame_len
 
+        # Retrieve the matched audio
          matched_audio  = match_slices[close_mfcc[frame_id][0]]['audio'][0]
-         
+
+        # Apply time stretching to the matched audio based on the calculated rate
          matched_audio = librosa.effects.time_stretch(y = matched_audio, rate = 1/time_stretch_rate)
 
+        # Retrieve sample rate and octave information from close_mfcc
          sr = match_slices[close_mfcc[frame_id][0]]['audio'][1]
-
+        
          octave = close_mfcc[frame_id][1]
 
          if octave > 1:
             matched_audio = librosa.effects.pitch_shift(y = matched_audio, sr = sr, n_steps = (octave-1) * 12, )
          elif 0 < octave < 1:
             matched_audio = librosa.effects.pitch_shift(y = matched_audio, sr = sr, n_steps = math.log2(octave) * 12 )
-            
-         output_audio = np.concatenate((output_audio, matched_audio))
 
+        # Concatenate the processed matched audio to the output_audio array
+         output_audio = np.concatenate((output_audio, matched_audio))
+          
+    # Return the final resynthesized audio
     return output_audio
